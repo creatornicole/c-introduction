@@ -61,7 +61,7 @@ int main(int argc, char *argv[])
 	}
 	
 	/* Test, ob Quelldatei Leserechte besitzt */
-	if(!buf.st_mode & S_IRUSR) {
+	if((!buf.st_mode) & S_IRUSR) {
 		fprintf(stderr, "Error: Sie besitzen keine Leserechte fuer ");
 		fprintf(stderr, "die uebergebene Quelldatei.\n");
 		exit(EXIT_FAILURE);
@@ -103,9 +103,22 @@ int main(int argc, char *argv[])
 	}
 	
 	/*================================================================
-	 * Abbildung Quell- und Zielbereich mmap
+	 * Quelldatei Vorbereitung
 	 *===============================================================*/
 	off_t file_size_quelle = buf.st_size;
+	
+	/*================================================================
+	 * Zieldatei Vorbereitung
+	 *===============================================================*/
+	/* Zieldatei auf gleiche Groesse wie Quelldatei festlegen */
+	if(ftruncate(fdZieldatei, file_size_quelle) == -1) {
+		perror("ftruncate: ");
+		exit(EXIT_FAILURE);
+	}
+	
+	/*================================================================
+	 * Abbildung Quell- und Zielbereich mmap
+	 *===============================================================*/
 	char *srcMap = mmap(0, file_size_quelle, PROT_READ, 
 		MAP_PRIVATE, fdQuelldatei, 0);
 		
@@ -151,6 +164,9 @@ int main(int argc, char *argv[])
 		perror("close: ");
 		exit(EXIT_FAILURE);
 	}
+	
+	printf("Quelldatei %s erfolgreich in Zieldatei %s kopiert.\n",
+		quelldatei, zieldatei);
 
 	return EXIT_SUCCESS;
 }
