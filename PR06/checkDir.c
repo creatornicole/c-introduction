@@ -4,7 +4,7 @@
 #include <string.h>
 #include <sys/stat.h> /* for stat usage */
 
-#include "checkDir.h"
+#include "libmylib.h"
 
 /* Deklaration von Funktionskoepfen */
 /* Deklaration von globalen Variablen */
