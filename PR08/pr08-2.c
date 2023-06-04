@@ -29,7 +29,7 @@
 int main(int argc, char *argv[])
 {
 	int npid;
-	npid = fork(); /* ab hier zwei gleich laufende Programme */
+	npid = fork(); /* ab hier zwei gleich laufende Prozesse */
 	
 	if (npid == -1) { /* Elternprozess -1 im Fehlerfall */
 		/* Code im Fehlerfall */

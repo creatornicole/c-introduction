@@ -27,7 +27,7 @@
 int main(int argc, char *argv[])
 {
 	int npid;
-	npid = fork(); /* ab hier zwei gleich laufende Programme */
+	npid = fork(); /* ab hier zwei gleich laufende Prozesse */
 	
 	if (npid == -1) { /* Elternprozess -1 im Fehlerfall */
 		/* Code im Fehlerfall */
@@ -74,7 +74,14 @@ int main(int argc, char *argv[])
 				Rueckgabe -1 -> alle Kindprozesse beendet */
 		 
 		 int wstatus;
-		 while(wait(&wstatus) > 0) {
+		 int pid;
+		 while((pid = wait(&wstatus)) > 0) {
+			/* Fehlerbehandlung im Fehlerfall von wait() */
+			if(pid == -1) {
+				perror("wait: ");
+				exit(EXIT_FAILURE);
+			}
+			 
 			/* Rueckgabewert des Kindes auswerten */
 			/* Wenn Kindprozess (normal) beendet wurde return true */
 			/* "normal" = exit(), _exit(), return from main() */
