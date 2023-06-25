@@ -161,7 +161,8 @@ während gesamter Laufzeit des Server-Hosts in Betrieb
 			 dieses verloren.
 
 4. Server bearbeitet entsprechenden Auftrag
-	Hat
+	Hat Name der Zieldatei von Client uebermittelt bekommen
+	Kopiert Daten in Zieldatei
 
 5. Sende Ergebnis an Client (sendto())
 	sendto() für verbindungslose Protokolle
@@ -171,6 +172,10 @@ während gesamter Laufzeit des Server-Hosts in Betrieb
 			 nutzbar, wenn Zieladresse vorher mit connect() festgelegt
 			 wurde.
 
-6. 
+6. Solange nicht beendet zu 3.
+
+7. Loeschen der Sockets beim Herunterfahren, da ein Socket nur an eine
+   Adresse gebunden werden kann, wenn diese nicht bereits anderweitig
+   vergeben ist
 
 
