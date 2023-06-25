@@ -1,0 +1,176 @@
+Aufgabe:
+
+Der Client liest Daten aus einer Quelldatei, der Server schreibt
+Daten in die Zieldatei.
+
+Dem Client werden beim Aufruf die Namen von Quell- und Zieldatei als
+Kommandozeilenparameter mit gegeben. Dem Server wird der Name der
+Zieldatei vom Client übermittelt.
+
+Der Server soll als iterativer Server arbeiten und einen Socket
+/tmp/mysocket für die Kommunikation benutzen.
+
+========================================================================
+
+Protokollinhalt:
+
+Protokoll beider Prozesse: Wer sagt wem wann was?
+
+========================================================================
+
+Allgemeines:
+
+Iterativer Server = einen Auftrag nach dem anderen
+	- sinnvoll, wenn Auftrag in definierter, kurzer Zeit erledigt
+	  werden kann
+	- Skalierung iterativer Server durch mehrere Serverprozesse
+
+Protokoll = verbindungsloses Protokoll
+	- aufgrund der Nutzung eines iterativen Servers
+	- iterative Server sind typisch für verbindungslose Protokolle
+	- für Datagrammverarbeitung
+
+------------------------------------------------------------------------
+
+Weitere Hinweise:
+	- Zugriff auf lokale Sockets wird durch Zugriffsrechte geregelt
+	Sockets sind bidirektional (full duplex)
+
+------------------------------------------------------------------------
+
+Client:
+Nutzen Dienste (aktiv), senden Server Aufträge, erhalten von Server
+Ergebnisse
+
+1. Client erhält Quell- und Zieldatei als Kommandozeilenparameter
+
+2. Client legt einen Socket an (socket())
+	family	PF_LOCAL an (da lokale Streamsockets)
+		- Nutzung von Protokollfamilie PF_ in socket()
+		- Nutzung von Adressfamile AF_ in Adr-struktur struct sockaddr()
+	type	SOCK_DGRAM (iterativer Server -> verbindungslos -> Datagrammv.)
+		- Reihenfolge und Übertragung nicht garantiert
+		- keine Flusssteuerung
+	proto	0 (Protokoll entsprechend Typ, Familie)
+	
+	Return: Socketdeskriptor oder -1
+	Beachte: Moegliche Fehler
+		EPROTONOSUPPORT	Adressfamilie nicht unterstützt
+		EPROTOTYPE		Sockettyp von Protokoll nicht unterstützt
+		ENOMEM, ENOBUFS	nicht genügend Systemressourcen (dyn. Speicher)
+		
+3. Client bindet angelegten Socket an Adresse (bind())
+	socket		zuvor angelegter Socket
+	sockaddr	Adressstruktur
+				für lokale Kommunikation gilt:
+				struct sockaddr_un {
+					sa_family_t sun_family; /* immer AF_LOCAL */
+					char sun_path[104]; /* Pfadlaenge < 
+											92Bytes portabel*/
+				}
+	addrlen
+	
+	Hinweis: 
+		- Ein lokaler Socket erhält beim Binden einen mit ls
+		  anzeigbaren Eintrag im Dateisystem als Namen!
+		  (i.d.R. /tmp oder /tmp/dir)
+		- beim Binden des Socket werden die Rechte von umask abgeleitet
+		- bind() erfordert Schreibrechte auf das Verzeichnis
+		
+	Beachte: Ein lokaler Socket kann nur dann an eine Adresse gebunden
+			 werden, wenn diese nicht bereits anderweitig vergeben ist.
+			 Server sollten deshalb ihre Sockets beim Herunterfahren
+			 löschen.
+
+4. Client liest Datei aus Quelldatei
+
+5. Schreibt, sendet ausgelesene Daten und Name der Zieldatei
+	in Socket (sendto())
+	
+	sendto() für verbindungslose Protokolle
+	hat zusätzliche Paramter Zieladresse und dessen Länge
+	
+	Hinweis: write() und send() auch für verbindungslose Protokolle
+			 nutzbar, wenn Zieladresse vorher mit connect() festgelegt
+			 wurde.
+
+6. Warte auf die Antwort vom Server
+
+7. Aus Socket lesen, empfangen (recvfrom())
+	recvfrom() für verbindungsloses Protokoll
+	hat zusätliche Parameter:
+		Länge ist Eingabe- und Ergebnisparameter
+		Adressbereich erhält Adresse des Absenders
+	
+	Beachte: Wenn Puffergröße size für Paket nicht ausreicht, geht
+			 dieses verloren.
+
+------------------------------------------------------------------------
+
+Server:
+Bieten Dienste an, warten (passiv) auf Verbindung vom Client, sind i.a.
+während gesamter Laufzeit des Server-Hosts in Betrieb
+
+1. Server legt einen Socket an (socket()) (/tmp/mysocket)
+	family	PF_LOCAL an (da lokale Streamsockets)
+		- Nutzung von Protokollfamilie PF_ in socket()
+		- Nutzung von Adressfamile AF_ in Adr-struktur struct sockaddr()
+	type	SOCK_DGRAM (iterativer Server -> verbindungslos -> Datagrammv.)
+		- Reihenfolge und Übertragung nicht garantiert
+		- keine Flusssteuerung
+	proto	0 (Protokoll entsprechend Typ, Familie)
+	
+	Return: Socketdeskriptor oder -1
+	Beachte: Moegliche Fehler
+		EPROTONOSUPPORT	Adressfamilie nicht unterstützt
+		EPROTOTYPE		Sockettyp von Protokoll nicht unterstützt
+		ENOMEM, ENOBUFS	nicht genügend Systemressourcen (dyn. Speicher)
+
+2. Server bindet angelegten Socket an Adresse (bind())
+	socket		zuvor angelegter Socket
+	sockaddr	Adressstruktur
+				für lokale Kommunikation gilt:
+				struct sockaddr_un {
+					sa_family_t sun_family; /* immer AF_LOCAL */
+					char sun_path[104]; /* Pfadlaenge < 
+											92Bytes portabel*/
+				}
+	addrlen
+	
+	Hinweis: 
+		- Ein lokaler Socket erhält beim Binden einen mit ls
+		  anzeigbaren Eintrag im Dateisystem als Namen!
+		  (i.d.R. /tmp oder /tmp/dir)
+		- beim Binden des Socket werden die Rechte von umask abgeleitet
+		- bind() erfordert Schreibrechte auf das Verzeichnis
+		
+	Beachte: Ein lokaler Socket kann nur dann an eine Adresse gebunden
+			 werden, wenn diese nicht bereits anderweitig vergeben ist.
+			 Server sollten deshalb ihre Sockets beim Herunterfahren
+			 löschen.
+
+3. Liest, empfängt Name der Zieldatei aus Socket (recvfrom())
+	recvfrom() für verbindungsloses Protokoll
+	hat zusätliche Parameter:
+		Länge ist Eingabe- und Ergebnisparameter
+		Adressbereich erhält Adresse des Absenders
+	
+	Hinweis: Blockiert bis Datagramm eintritt.
+	
+	Beachte: Wenn Puffergröße size für Paket nicht ausreicht, geht
+			 dieses verloren.
+
+4. Server bearbeitet entsprechenden Auftrag
+	Hat
+
+5. Sende Ergebnis an Client (sendto())
+	sendto() für verbindungslose Protokolle
+	hat zusätzliche Paramter Zieladresse und dessen Länge
+	
+	Hinweis: write() und send() auch für verbindungslose Protokolle
+			 nutzbar, wenn Zieladresse vorher mit connect() festgelegt
+			 wurde.
+
+6. 
+
+
