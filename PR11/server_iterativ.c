@@ -54,27 +54,38 @@ void sighandler(int signo)
  
  /*=====================================================================
  * 
- * - 
+ * - Server schreibt Daten in Zieldatei
+ * - erhaelt Name der Zieldatei von Client uebermittelt
+ * - iterativer Server, der mit Socket /tmp/socket arbeitet 
  * 
  * ===================================================================*/
  
  int main(int argc, char *argv[]) 
  {
-
+	/*=================================================================
+	 * Variablendeklaration
+	 * ===============================================================*/
 	struct sockaddr_un server_addr, client_addr;
 	int addrlen;
 	socklen_t clientaddrlen;
 	struct sigaction old, new;
 	int commsockfd; /* Socket fuer Kommunikation zum Reinschreiben */
 	
+	/*=================================================================
+	 * Adressen vorbereiten
+	 * ===============================================================*/
 	/* Serveradresse vorbereiten */
 	memset(&server_addr, 0, sizeof(server_addr));
 	server_addr.sun_family = AF_LOCAL;
 	strncpy(server_addr.sun_path, SOCKET_PATH, 
 		sizeof(server_addr.sun_path) -1);
 	
-	addrlen = strlen(server_addr.sun_path) + offsetof(struct sockaddr_un, sun_path);
+	addrlen = strlen(server_addr.sun_path) 
+		+ offsetof(struct sockaddr_un, sun_path);
 	
+	/*=================================================================
+	 * Verbindung herstellen
+	 * ===============================================================*/
 	/* Socket anlegen */
 	if((sockfd = socket(PF_LOCAL, SOCK_STREAM, 0)) == -1) {
 		perror("socket: ");
@@ -122,6 +133,9 @@ void sighandler(int signo)
 		exit(EXIT_FAILURE);
 	}
 	
+	/*=================================================================
+	 * Daten empfangen
+	 * ===============================================================*/
 	/* Puffer fuer den Empfang des Dateinamens */
 	char buffer[BUFFER_SIZE];
 	
@@ -140,13 +154,21 @@ void sighandler(int signo)
 			exit(EXIT_FAILURE);
 		}
 		
+		/*==============================================================
+		 * Zieldateinamen empfangen und verarbeiten
+		 * ===========================================================*/
 		/* Auftrag lesen - Zielateinamen vom Client empfangen */
 		char zieldatei[BUFFER_SIZE];
 		ssize_t bytes_received = read(commsockfd, zieldatei, sizeof(zieldatei) -1);
 		if(bytes_received == -1)
 		{
 			perror("read: ");
-			close(commsockfd);
+			/* Socket schliessen */
+			if(close(commsockfd) == -1)
+			{
+				perror("close: ");
+				exit(EXIT_FAILURE);
+			}
 			exit(EXIT_FAILURE);
 		}
 		
@@ -158,10 +180,18 @@ void sighandler(int signo)
 		if(zielfd == -1)
 		{
 			perror("open: ");
-			close(commsockfd);
+			/* Socket schliessen */
+			if(close(commsockfd) == -1)
+			{
+				perror("close: ");
+				exit(EXIT_FAILURE);
+			}
 			exit(EXIT_FAILURE);
 		} 
 		
+		/*==============================================================
+		 * Quelldatei Daten empfangen und verarbeiten
+		 * ===========================================================*/
 		/* Daten vom Client empfangen und in die Zieldatei schreiben */
 		ssize_t bytes_received_total = 0;
 		
@@ -171,10 +201,20 @@ void sighandler(int signo)
 			if(bytes_written == -1)
 			{
 				perror("write: ");
-				close(commsockfd);
-				close(zielfd);
-				remove(zieldatei); /* Loeschen, da Schreibvorgang
-										fehlgeschlagen */
+				/* Socket schliessen */
+				if(close(commsockfd) == -1)
+				{
+					perror("close: ");
+					exit(EXIT_FAILURE);
+				}
+				/* Datei schliessen */
+				if(close(zielfd) == -1)
+				{
+					perror("close: ");
+					exit(EXIT_FAILURE);
+				}
+				/* Loeschen, da Schreibvorgang fehlgeschlagen */
+				remove(zieldatei); 
 				exit(EXIT_FAILURE);
 			}
 			bytes_received_total += bytes_received;
@@ -183,21 +223,33 @@ void sighandler(int signo)
 		if(bytes_received == -1)
 		{
 			perror("read: ");
-			close(commsockfd);
-			close(zielfd);
-			remove(zieldatei); /* Loeschen, da Schreibvorgang
-										fehlgeschlagen */
+			/* Socket schliessen */
+			if(close(commsockfd) == -1)
+			{
+				perror("close: ");
+				exit(EXIT_FAILURE);
+			}
+			/* Datei schliessen */
+			if(close(zielfd) == -1)
+			{
+				perror("close: ");
+				exit(EXIT_FAILURE);
+			}
+			/* Loeschen, da Schreibvorgang fehlgeschlagen */
+			remove(zieldatei); 
 			exit(EXIT_FAILURE);
 		}
 		
-		/* Verbindungen und Dateideskriptoren schliessen */
-		/* Fehlerbehandlung: */
+		/*==============================================================
+		 * Nachbereitung
+		 * ===========================================================*/
+		/* Socket schliessen */
 		if(close(commsockfd) == -1)
 		{
 			perror("close: ");
 			exit(EXIT_FAILURE);
 		}
-		
+		/* Datei schliessen */
 		if(close(zielfd) == -1)
 		{
 			perror("close: ");
@@ -206,7 +258,12 @@ void sighandler(int signo)
 		
 	}
 	
-	close(sockfd);
+	/* Verbindung schliessen */
+	if(close(sockfd) == -1)
+	{
+		perror("close: ");
+		exit(EXIT_FAILURE);
+	}
 	
 	return EXIT_SUCCESS;
 
