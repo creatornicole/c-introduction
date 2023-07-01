@@ -16,14 +16,30 @@
 
 /*=====================================================================
  * 
+ * Client-Server Anwendung zum Kopieren beliebiger Dateien - Client
+ * (Annahme: Server wird vor Client gestartet)
  * 
  * ===================================================================*/
  
- int main(int argc, char *argv[]) {
-	 
+ /*=====================================================================
+ * 
+ * - liest Daten aus einer Quelldatei
+ * - werden beim Aufruf Namen von Quell- und Zieldatei als
+ * 	 Kommandozeilenparameter mit gegeben
+ * 
+ * ===================================================================*/
+ 
+ int main(int argc, char *argv[]) 
+ {
+	 /*==================================================================
+	 * Variablendeklaration
+	 * ===============================================================*/
 	 int sockfd;
 	 struct sockaddr_un server_addr;
 	 
+	 /*=================================================================
+	 * Vorbereitung
+	 * ===============================================================*/
 	 /* Abfangen falscher Parameteranzahl */
 	 if(argc != 3) 
 	 {
@@ -38,6 +54,20 @@
 	 char *quelldateiname = argv[1];
 	 char *zieldateiname = argv[2];
 	 
+	 /*=================================================================
+	 * Daten senden - Vorbereitung Inhalt Quelldatei
+	 * ===============================================================*/
+	 /* Quelldateiarbeit vorbereiten */
+	 int fdQuelldatei;
+	 if((fdQuelldatei = open(quelldateiname, O_RDONLY)) == - 1) 
+	 {
+		perror("open: ");
+		exit(EXIT_FAILURE);
+	 }
+	 
+	 /*=================================================================
+	 * Adressen vorbereiten
+	 * ===============================================================*/
 	 /* Zieladresse des Servers vorbereiten */
 	 
 	 /* Speicherplatz mit Konstante fuellen 
@@ -48,6 +78,9 @@
 	 strncpy(server_addr.sun_path, SOCKET_PATH, 
 		sizeof(server_addr.sun_path) - 1);
 	
+	/*=================================================================
+	 * Verbindung herstellen
+	 * ===============================================================*/
 	/* Socket anlegen */
 	if((sockfd = socket(AF_LOCAL, SOCK_STREAM, 0)) == -1) {
 		perror("socket: ");
@@ -62,6 +95,9 @@
 		exit(EXIT_FAILURE);
 	}
 	
+	/*=================================================================
+	 * Daten senden - Zieldateiname
+	 * ===============================================================*/
 	/* Zieldateinamen an Serveradresse senden */
 	if(write(sockfd, zieldateiname, strlen(zieldateiname)) == -1)
 	{
@@ -69,14 +105,9 @@
 		exit(EXIT_FAILURE);
 	}
 	
-	/* Quelldateiarbeit vorbereiten */
-	int fdQuelldatei;
-	if((fdQuelldatei = open(quelldateiname, O_RDONLY)) == - 1) 
-	{
-		perror("open: ");
-		exit(EXIT_FAILURE);
-	}
-	
+	/*=================================================================
+	 * Daten senden - Inhalt Quelldatei
+	 * ===============================================================*/
 	/* Daten aus Quelldatei an Server senden */
 	char buffer[BUFFER_SIZE]; /* Puffer zum Daten aus Quelldatei 
 									lesen */
@@ -95,14 +126,28 @@
 			perror("write: ");
 			exit(EXIT_FAILURE);
 		}		
-		
-		printf("%s", buffer);
 	}
 	
+	/*=================================================================
+	 * Statuscode von Server empfangen (Success oder Fehlermeldung)
+	 * ===============================================================*/
+	
+	
+	/*=================================================================
+	 * Nachbereitung
+	 * ===============================================================*/
 	/* Datei schliessen */
-	close(fdQuelldatei);
+	if(close(fdQuelldatei) == -1)
+	{
+		perror("close: ");
+		exit(EXIT_FAILURE);
+	}
 	/* Socket wieder schliessen */
-	close(sockfd);
+	if(close(sockfd) == -1)
+	{
+		perror("close: ");
+		exit(EXIT_FAILURE);
+	}
 	
 	return EXIT_SUCCESS;
  

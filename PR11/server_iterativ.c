@@ -47,9 +47,16 @@ void sighandler(int signo)
 
 /*=====================================================================
  * 
+ * Client-Server Anwendung zum Kopieren beliebiger Dateien - Server
+ * (Annahme: Server wird vor Client gestartet)
  * 
  * ===================================================================*/
  
+ /*=====================================================================
+ * 
+ * - 
+ * 
+ * ===================================================================*/
  
  int main(int argc, char *argv[]) 
  {
@@ -145,14 +152,15 @@ void sighandler(int signo)
 		
 		zieldatei[bytes_received] = '\0';
 		
-		/* Zieldatei erstellen oder ueberschreiben */
-		int zielfd = open(zieldatei, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+		/* Zieldatei existiert bereits oder wird neu erstellt */
+		/* Bereits existent -> Programm-Exit */
+		int zielfd = open(zieldatei, O_WRONLY | O_CREAT | O_EXCL, 0666);
 		if(zielfd == -1)
 		{
 			perror("open: ");
 			close(commsockfd);
 			exit(EXIT_FAILURE);
-		}
+		} 
 		
 		/* Daten vom Client empfangen und in die Zieldatei schreiben */
 		ssize_t bytes_received_total = 0;
@@ -183,8 +191,18 @@ void sighandler(int signo)
 		}
 		
 		/* Verbindungen und Dateideskriptoren schliessen */
-		close(commsockfd);
-		close(zielfd);
+		/* Fehlerbehandlung: */
+		if(close(commsockfd) == -1)
+		{
+			perror("close: ");
+			exit(EXIT_FAILURE);
+		}
+		
+		if(close(zielfd) == -1)
+		{
+			perror("close: ");
+			exit(EXIT_FAILURE);
+		}
 		
 	}
 	
