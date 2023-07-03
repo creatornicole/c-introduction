@@ -10,11 +10,13 @@
 #include <stddef.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <errno.h>
 
 /* Deklaration von Funktionskoepfen */
 /* Deklaration von globalen Variablen */
 #define BUFFER_SIZE 1024
 #define SOCKET_PATH "/tmp/mysocket"
+#define MSG_SIZE 30
 
 /* Global wegen Signalhandler */
 int sockfd;
@@ -66,7 +68,6 @@ void sighandler(int signo)
 	 * Variablendeklaration
 	 * ===============================================================*/
 	struct sockaddr_un server_addr, client_addr;
-	int addrlen;
 	socklen_t clientaddrlen;
 	struct sigaction old, new;
 	int commsockfd; /* Socket fuer Kommunikation zum Reinschreiben */
@@ -80,26 +81,36 @@ void sighandler(int signo)
 	strncpy(server_addr.sun_path, SOCKET_PATH, 
 		sizeof(server_addr.sun_path) -1);
 	
-	addrlen = strlen(server_addr.sun_path) 
-		+ offsetof(struct sockaddr_un, sun_path);
-	
 	/*=================================================================
 	 * Verbindung herstellen
 	 * ===============================================================*/
 	/* Socket anlegen */
-	if((sockfd = socket(PF_LOCAL, SOCK_STREAM, 0)) == -1) {
+	if((sockfd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
 		perror("socket: ");
 		exit(EXIT_FAILURE);
 	}
 	
-	/* Entferne alten Dateieintrag fuer Socket */
-	/* Sonst scheitert bind() */
-	remove(SOCKET_PATH);
+	/* Pruefen, ob SOCKET_PATH bereits existiert */
+	/* Entfernen wenn ja, sonst scheitert bind() */
+	struct stat sock_info;
+	if(stat(SOCKET_PATH, &sock_info) == 0)
+	{
+		if(unlink(SOCKET_PATH) == -1)
+		{
+			perror("unlink: ");
+			exit(EXIT_FAILURE);
+		}
+	}
 	
 	/* Serveradresse an Socket binden */
-	if(bind(sockfd, (struct sockaddr*)&server_addr, addrlen) == -1)
+	if(bind(sockfd, (struct sockaddr*)&server_addr, 
+		sizeof(server_addr)) == -1)
 	{
 		perror("bind: ");
+		if(close(sockfd) == -1)
+		{
+			perror("close: ");
+		}
 		exit(EXIT_FAILURE);
 	}
 	
@@ -111,8 +122,8 @@ void sighandler(int signo)
 		exit(EXIT_FAILURE);
 	}
 	
-	/* Auf Anfrage warten */
-	/* 5 ist typischer Wert fuer backlog */
+	/* Warteschlange initialisieren */
+	/* Max. 5; 5 ist typischer Wert fuer backlog */
 	if(listen(sockfd, 5) == -1)
 	{
 		perror("listen: ");
@@ -143,101 +154,113 @@ void sighandler(int signo)
 	while(1)
 	{
 		/* Laenge der Struktur fuer Client */
-		clientaddrlen = sizeof(struct sockaddr_un);
+		clientaddrlen = sizeof(server_addr);
 		
 		/* Auf Auftrag warten */
 		/* Blockiert bis Verbindung durch Client */
 		if((commsockfd = accept(sockfd, (struct sockaddr*)&client_addr,
-			&clientaddrlen)) == -1)
+			(socklen_t*)&clientaddrlen)) == -1)
 		{
 			perror("accept: ");
 			exit(EXIT_FAILURE);
 		}
 		
 		/*==============================================================
-		 * Zieldateinamen empfangen und verarbeiten
+		 * Zieldateinamen empfangen
 		 * ===========================================================*/
 		/* Auftrag lesen - Zielateinamen vom Client empfangen */
-		char zieldatei[BUFFER_SIZE];
-		ssize_t bytes_received = read(commsockfd, zieldatei, sizeof(zieldatei) -1);
+		char status_msg[MSG_SIZE]; /* Status zwischenspeichern */
+		char filename[BUFFER_SIZE];
+		
+		/* Filename Array mit 0 initialisieren */
+		memset(filename, 0, sizeof(filename));
+		
+		/* Zieldateinamen von Client lesen */
+		int bytes_received = recv(commsockfd, filename, 
+			sizeof(filename), 0);
 		if(bytes_received == -1)
 		{
-			perror("read: ");
+			perror("recv: ");
 			/* Socket schliessen */
 			if(close(commsockfd) == -1)
 			{
 				perror("close: ");
 				exit(EXIT_FAILURE);
 			}
-			exit(EXIT_FAILURE);
+			continue;
 		}
 		
-		zieldatei[bytes_received] = '\0';
-		
-		/* Zieldatei existiert bereits oder wird neu erstellt */
-		/* Bereits existent -> Programm-Exit */
-		int zielfd = open(zieldatei, O_WRONLY | O_CREAT | O_EXCL, 0666);
-		if(zielfd == -1)
+		/* Rueckmeldung zu Client, wenn Dateiname zu lang ist */
+		if(strlen(filename) >= sizeof(filename) - 1)
 		{
-			perror("open: ");
-			/* Socket schliessen */
+			strncpy(status_msg, "TOOLONGFILENAME", sizeof(status_msg));
+			/* Client Rueckmeldung geben */
+			if(send(commsockfd, status_msg, strlen(status_msg) + 1, 0)
+				== -1)
+			{
+				perror("send: ");
+			}
+			/* Serverausgabe */
+			fprintf(stderr, "Zieldateiname zu lang.\n");
 			if(close(commsockfd) == -1)
 			{
 				perror("close: ");
-				exit(EXIT_FAILURE);
 			}
-			exit(EXIT_FAILURE);
-		} 
+			continue;
+		}
+		
+		/*==============================================================
+		 * Zieldateinamen verarbeiten
+		 * ===========================================================*/
+		/* Oeffnen Zieldatei zum Schreiben */
+		FILE *fp = fopen(filename, "wxb");
+		if(fp == NULL)
+		{
+			if(errno == EEXIST)
+			{
+				/* Datei existiert bereits */
+				strncpy(status_msg, "FILEEXISTS", sizeof(status_msg));
+			}
+			else
+			{
+				/* Anderer Fehler ist aufgetreten */
+				strncpy(status_msg, "FILEERROR", sizeof(status_msg));
+			}
+			
+			/* Client ueber aufgetretenen Fehler informieren */
+			if(send(commsockfd, status_msg, strlen(status_msg) + 1, 0)
+				== -1)
+			{
+				perror("send: ");
+			}
+			fprintf(stderr, "Datei konnte nicht geoeffnet werden.\n");
+			close(commsockfd);
+			continue;
+		}
+		
+		/*==============================================================
+		 * Status Code an Client senden
+		 * ===========================================================*/
+		strncpy(status_msg, "FILESUCCESS", sizeof(status_msg));
+		if(send(commsockfd, status_msg, strlen(status_msg) + 1, 0)
+			== -1)
+		{
+			perror("write: ");
+		}
 		
 		/*==============================================================
 		 * Quelldatei Daten empfangen und verarbeiten
 		 * ===========================================================*/
-		/* Daten vom Client empfangen und in die Zieldatei schreiben */
-		ssize_t bytes_received_total = 0;
-		
-		while((bytes_received = read(commsockfd, buffer, BUFFER_SIZE)) > 0)
+		/* Daten vom Client empfangen und in die Zieldatei schreiben */		
+		while((bytes_received = recv(commsockfd, buffer, 
+			BUFFER_SIZE, 0)) > 0)
 		{
-			ssize_t bytes_written = write(zielfd, buffer, bytes_received);
-			if(bytes_written == -1)
+			if(fwrite(buffer, sizeof(char), bytes_received, fp) 
+				< bytes_received)
 			{
-				perror("write: ");
-				/* Socket schliessen */
-				if(close(commsockfd) == -1)
-				{
-					perror("close: ");
-					exit(EXIT_FAILURE);
-				}
-				/* Datei schliessen */
-				if(close(zielfd) == -1)
-				{
-					perror("close: ");
-					exit(EXIT_FAILURE);
-				}
-				/* Loeschen, da Schreibvorgang fehlgeschlagen */
-				remove(zieldatei); 
-				exit(EXIT_FAILURE);
+				perror("fwrite: ");
+				break;
 			}
-			bytes_received_total += bytes_received;
-		}
-		
-		if(bytes_received == -1)
-		{
-			perror("read: ");
-			/* Socket schliessen */
-			if(close(commsockfd) == -1)
-			{
-				perror("close: ");
-				exit(EXIT_FAILURE);
-			}
-			/* Datei schliessen */
-			if(close(zielfd) == -1)
-			{
-				perror("close: ");
-				exit(EXIT_FAILURE);
-			}
-			/* Loeschen, da Schreibvorgang fehlgeschlagen */
-			remove(zieldatei); 
-			exit(EXIT_FAILURE);
 		}
 		
 		/*==============================================================
@@ -250,11 +273,13 @@ void sighandler(int signo)
 			exit(EXIT_FAILURE);
 		}
 		/* Datei schliessen */
-		if(close(zielfd) == -1)
+		if(fclose(fp) == -1)
 		{
-			perror("close: ");
+			perror("fclose: ");
 			exit(EXIT_FAILURE);
 		}
+		
+		printf("Zieldatei erfolgreich erstellt.\n");
 		
 	}
 	
